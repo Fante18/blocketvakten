@@ -15,8 +15,12 @@ STATIC_DIR = BASE_DIR / "static"
 # Most platforms set this automatically; you can also provide it manually.
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
-HOST = os.environ.get("BLOCKETVAKTEN_HOST", "127.0.0.1")
-PORT = int(os.environ.get("BLOCKETVAKTEN_PORT", "8080"))
+_default_host = "0.0.0.0" if DATABASE_URL else "127.0.0.1"
+HOST = os.environ.get("BLOCKETVAKTEN_HOST", _default_host)
+PORT = int(os.environ.get(
+    "BLOCKETVAKTEN_PORT",
+    int(os.environ.get("PORT", "8080"))  # Railway / Render sets PORT automatically
+))
 
 # How often the built-in scheduler checks active searches (seconds).
 CHECK_INTERVAL = float(os.environ.get("BLOCKETVAKTEN_CHECK_INTERVAL", "60"))
