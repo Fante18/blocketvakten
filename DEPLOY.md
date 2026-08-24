@@ -37,18 +37,27 @@ Före (lokalt):                   Efter (moln):
 
 ## Steg 3 – Konfigurera e-post (Brevo / Gmail / SMTP)
 
-Lägg till miljövariabler för e-post i Railway (under din app → **Variables**):
+För Brevo rekommenderas HTTPS API framför SMTP i Railway. HTTPS använder port
+443 och undviker timeout-problem som kan uppstå när molnplattformar begränsar
+SMTP-portar.
 
-| Variabel | Värde (exempel med Brevo) |
+Lägg till följande variabler i Railway (under din app → **Variables**):
+
+| Variabel | Värde |
 |---|---|
-| `BLOCKETVAKTEN_SMTP_HOST` | `smtp-relay.brevo.com` |
-| `BLOCKETVAKTEN_SMTP_PORT` | `587` |
-| `BLOCKETVAKTEN_SMTP_USER` | `din.email@gmail.com` |
-| `BLOCKETVAKTEN_SMTP_PASSWORD` | `ditt-brevo-master-password` |
-| `BLOCKETVAKTEN_SMTP_TLS` | `1` |
-| `BLOCKETVAKTEN_EMAIL_FROM` | `din.email@gmail.com` |
+| `BLOCKETVAKTEN_BREVO_API_KEY` | Din Brevo API-nyckel |
+| `BLOCKETVAKTEN_EMAIL_FROM` | Verifierad avsändaradress i Brevo |
 | `BLOCKETVAKTEN_HOST` | `0.0.0.0` |
 | `BLOCKETVAKTEN_PORT` | `8080` |
+
+Skapa API-nyckeln i Brevo under **SMTP & API → API Keys → Create a new API key**.
+Börja med `xkeysib-` och visas bara en gång — spara den säkert. Använd inte
+Brevos SMTP-lösenord som API-nyckel.
+
+SMTP-variablerna kan lämnas kvar som fallback eller tas bort:
+`BLOCKETVAKTEN_SMTP_HOST`, `BLOCKETVAKTEN_SMTP_PORT`, `BLOCKETVAKTEN_SMTP_USER`,
+`BLOCKETVAKTEN_SMTP_PASSWORD` och `BLOCKETVAKTEN_SMTP_TLS`. Om
+`BLOCKETVAKTEN_BREVO_API_KEY` finns använder appen API:et först.
 
 Appen startar om automatiskt när du sparar variablerna.
 

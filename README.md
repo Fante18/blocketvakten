@@ -104,6 +104,8 @@ BLOCKETVAKTEN_DISABLE_SCHEDULER=1 python app.py
 | `BLOCKETVAKTEN_SMTP_TLS` | `1` | Använd STARTTLS |
 | `BLOCKETVAKTEN_EMAIL_FROM` | tom | Avsändaradress |
 | `BLOCKETVAKTEN_EMAIL_TO` | tom | Legacy-fallback för profilens mottagaradress |
+| `BLOCKETVAKTEN_BREVO_API_KEY` | tom | Brevo API-nyckel (rekommenderas i Railway; använder HTTPS/443) |
+| `BLOCKETVAKTEN_BREVO_API_URL` | Brevos standard-URL | Valfri egen Brevo API-URL |
 
 E-postadressen anges sedan under **Profil & inställningar**. SMTP-variablerna
 konfigurerar bara transporten; varje bevakning har dessutom en egen

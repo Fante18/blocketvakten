@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import html
+import json
 import smtplib
+import urllib.request
 from email.message import EmailMessage
 
 import config
@@ -18,6 +20,37 @@ def _price_text(price) -> str:
 def _header_text(value: str) -> str:
     """Avoid malformed headers when a user enters a name containing newlines."""
     return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
+
+
+def _send_via_brevo_api(subject: str, text_body: str, html_body: str, recipient: str) -> bool:
+    """Send via Brevo's HTTPS API. HTTPS/443 avoids SMTP port restrictions in cloud hosts."""
+    if not config.BREVO_API_KEY:
+        return False
+    payload = {
+        "sender": {"email": config.EMAIL_FROM},
+        "to": [{"email": recipient}],
+        "subject": subject,
+        "textContent": text_body,
+        "htmlContent": html_body,
+    }
+    request = urllib.request.Request(
+        config.BREVO_API_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "accept": "application/json",
+            "api-key": config.BREVO_API_KEY,
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if 200 <= response.status < 300:
+                return True
+            print(f"[notifier] Brevo API svarade HTTP {response.status}")
+    except Exception as exc:
+        print(f"[notifier] Brevo API misslyckades: {exc}")
+    return False
 
 
 def send_email_for_listings(
@@ -73,6 +106,11 @@ def send_email_for_listings(
     msg["Subject"] = f"Nya annonser: {clean_name} ({len(listings)})"
     msg["From"] = config.EMAIL_FROM
     msg["To"] = recipient
+    if config.BREVO_API_KEY and _send_via_brevo_api(msg["Subject"], body_text, body_html, recipient):
+        return True
+    if config.BREVO_API_KEY:
+        return False
+
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
 
@@ -123,6 +161,11 @@ Från {html.escape(old_p)} → <strong style="color:#1e8e3e">{html.escape(new_p)
     msg["Subject"] = f"Prissänkning: {clean_name}"
     msg["From"] = config.EMAIL_FROM
     msg["To"] = recipient
+    if config.BREVO_API_KEY and _send_via_brevo_api(msg["Subject"], body_text, body_html, recipient):
+        return True
+    if config.BREVO_API_KEY:
+        return False
+
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
 
@@ -171,7 +214,8 @@ def send_reset_email(email: str, token: str) -> bool:
     base_url = config.APP_URL or f"http://127.0.0.1:{config.PORT}"
     reset_url = f"{base_url}/?reset={token}&email={_html.escape(email, quote=True)}"
     msg = EmailMessage()
-    msg["Subject"] = "Aterstall ditt losenord"
+    subject = "Aterstall ditt losenord"
+    msg["Subject"] = subject
     msg["From"] = config.EMAIL_FROM
     msg["To"] = email
     lines = [
@@ -193,6 +237,11 @@ def send_reset_email(email: str, token: str) -> bool:
         "<p style=\"color:#888\">Lanken ar giltig i 1 timme.</p>\n"
         "</body></html>"
     )
+    if config.BREVO_API_KEY and _send_via_brevo_api(subject, body, body_html, email):
+        return True
+    if config.BREVO_API_KEY:
+        return False
+
     msg.set_content(body)
     msg.add_alternative(body_html, subtype="html")
     try:

@@ -49,8 +49,12 @@ SMTP_USE_TLS = os.environ.get("BLOCKETVAKTEN_SMTP_TLS", "1") == "1"
 EMAIL_FROM = os.environ.get("BLOCKETVAKTEN_EMAIL_FROM", "")
 EMAIL_TO = os.environ.get("BLOCKETVAKTEN_EMAIL_TO", "")
 
+# Brevo HTTPS API (uses port 443; recommended on cloud platforms).
+BREVO_API_KEY = os.environ.get("BLOCKETVAKTEN_BREVO_API_KEY", "")
+BREVO_API_URL = os.environ.get("BLOCKETVAKTEN_BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+
 # SMTP transport is ready even before the user enters a profile address.
-EMAIL_ENABLED = bool(SMTP_HOST and EMAIL_FROM)
+EMAIL_ENABLED = bool((BREVO_API_KEY or SMTP_HOST) and EMAIL_FROM)
 
 # --- SMS notifications (optional, not yet active – UI + DB only) ---------
 SMS_ENABLED = os.environ.get("BLOCKETVAKTEN_SMS_ENABLED", "") == "1"
