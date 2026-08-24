@@ -262,21 +262,32 @@ def create_user(email: str, password: str) -> dict | None:
         return None
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM users WHERE email = %s AND id != 0", (email,) ).fetchone()
+        cur.execute('SELECT 1 FROM users WHERE email = %s AND id != 0', (email,))
+        exists = cur.fetchone()
         if exists:
             return None
-        cur = conn.cursor()
-        cur.execute("INSERT INTO users (email, password_hash, created_at) VALUES (%s, %s, %s)", (email, _hash_password(password), _now()),)
+        cur2 = conn.cursor()
+        cur2.execute(
+            'INSERT INTO users (email, password_hash, created_at) '
+            'VALUES (%s, %s, %s) RETURNING id',
+            (email, _hash_password(password), _now()),
+        )
+        new_id = cur2.fetchone()[0]
         # Assign any orphaned searches (user_id=0) to this new user.
-        cur = conn.cursor()
-        cur.execute("UPDATE searches SET user_id = %s WHERE user_id = 0", (cur.fetchone()["id"],),)
-    return get_user_by_id(cur.fetchone()["id"])
+        cur3 = conn.cursor()
+        cur3.execute('UPDATE searches SET user_id = %s WHERE user_id = 0', (new_id,))
+    return get_user_by_id(new_id)
 
 
 def get_user_by_email(email: str) -> dict | None:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id, email, password_hash, created_at FROM users ")
+        cur.execute(
+            'SELECT id, email, password_hash, created_at FROM users '
+            'WHERE email = %s AND id != 0',
+            (email.strip().lower(),),
+        )
+        row = cur.fetchone()
     return dict(row) if row else None
 
 
@@ -285,7 +296,8 @@ def get_user_by_id(user_id: int) -> dict | None:
         return None
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id, email, created_at FROM users WHERE id = %s", (user_id,) ).fetchone()
+        cur.execute('SELECT id, email, created_at FROM users WHERE id = %s', (user_id,))
+        row = cur.fetchone()
     return dict(row) if row else None
 
 
@@ -313,7 +325,8 @@ def validate_session(token: str) -> int | None:
         return _user_id_by_token[token]
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT user_id, expires_at FROM sessions WHERE token = %s", (token,), ).fetchone()
+        cur.execute("SELECT user_id, expires_at FROM sessions WHERE token = %s", (token,), )
+        row = cur.fetchone()
     if not row:
         return None
     try:
@@ -370,7 +383,8 @@ def validate_reset_token(token: str) -> int | None:
         return None
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT user_id, expires_at FROM reset_tokens WHERE token = %s", (token,), ).fetchone()
+        cur.execute("SELECT user_id, expires_at FROM reset_tokens WHERE token = %s", (token,), )
+        row = cur.fetchone()
     if not row:
         return None
     try:
@@ -406,7 +420,8 @@ def _search_belongs_to(search_id: int, user_id: int) -> bool:
     """Check that a search belongs to the given user."""
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM searches WHERE id = %s AND user_id = %s", (search_id, user_id), ).fetchone()
+        cur.execute("SELECT 1 FROM searches WHERE id = %s AND user_id = %s", (search_id, user_id), )
+        row = cur.fetchone()
     return bool(row)
 
 
@@ -473,14 +488,16 @@ def create_search(
 def get_search(search_id: int) -> dict | None:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM searches WHERE id = %s", (search_id,) ).fetchone()
+        cur.execute("SELECT * FROM searches WHERE id = %s", (search_id,) )
+        row = cur.fetchone()
     return _row_search(row) if row else None
 
 
 def get_search_for_user(search_id: int, user_id: int) -> dict | None:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM searches WHERE id = %s AND user_id = %s", (search_id, user_id), ).fetchone()
+        cur.execute("SELECT * FROM searches WHERE id = %s AND user_id = %s", (search_id, user_id), )
+        row = cur.fetchone()
     return _row_search(row) if row else None
 
 
@@ -577,7 +594,8 @@ def insert_listing(search_id: int, listing: dict) -> bool:
     now = _now()
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, listing["ad_id"]), ).fetchone()
+        cur.execute("SELECT 1 FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, listing["ad_id"]), )
+        row = cur.fetchone()
         if exists:
             return False
         cur = conn.cursor()
@@ -629,7 +647,8 @@ def list_listings_sorted_by_deal_score(
 def get_listing(search_id: int, ad_id: str) -> dict | None:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), ).fetchone()
+        cur.execute("SELECT * FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), )
+        row = cur.fetchone()
     return dict(row) if row else None
 
 
@@ -660,7 +679,8 @@ def mark_all_seen(search_id: int) -> None:
 def listing_counts(search_id: int) -> dict:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(""" SELECT COUNT(*) AS total, SUM(CASE WHEN seen = FALSE THEN 1 ELSE 0 END) AS unseen, SUM(CASE WHEN interesting = TRUE THEN 1 ELSE 0 END) AS interesting FROM listings WHERE search_id = %s """, (search_id,), ).fetchone()
+        cur.execute(""" SELECT COUNT(*) AS total, SUM(CASE WHEN seen = FALSE THEN 1 ELSE 0 END) AS unseen, SUM(CASE WHEN interesting = TRUE THEN 1 ELSE 0 END) AS interesting FROM listings WHERE search_id = %s """, (search_id,), )
+        row = cur.fetchone()
     return {
         "total": row["total"] or 0,
         "unseen": row["unseen"] or 0,
@@ -694,7 +714,8 @@ def listing_statistics(search_id: int, days: int = 30, weeks: int = 8) -> dict:
     current_week = _week_start(now)
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT price, first_seen_at FROM listings WHERE search_id = %s", (search_id,), ).fetchall()
+        cur.execute("SELECT price, first_seen_at FROM listings WHERE search_id = %s", (search_id,), )
+        rows = cur.fetchall()
 
     period_prices = []
     weekly_counts = {}
@@ -870,7 +891,8 @@ def set_profile(user_id: int, profile: dict) -> dict:
 def get_setting(key: str, default: str | None = None) -> str | None:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT value FROM settings WHERE key = %s", (key,) ).fetchone()
+        cur.execute("SELECT value FROM settings WHERE key = %s", (key,) )
+        row = cur.fetchone()
     return row["value"] if row else default
 
 
@@ -941,7 +963,8 @@ def follow_listing(search_id: int, ad_id: str) -> bool:
         current_price = existing.get("price")
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), ).fetchone()
+        cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), )
+        row = cur.fetchone()
         if exists:
             return False
         cur = conn.cursor()
@@ -958,7 +981,8 @@ def unfollow_listing(search_id: int, ad_id: str) -> None:
 def is_following(search_id: int, ad_id: str) -> bool:
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), ).fetchone()
+        cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), )
+        row = cur.fetchone()
     return bool(row)
 
 
