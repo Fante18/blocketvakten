@@ -611,10 +611,10 @@ def insert_listing(search_id: int, listing: dict) -> bool:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("SELECT 1 FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, listing["ad_id"]), )
         row = cur.fetchone()
-        if exists:
+        if row:
             return False
         cur = conn.cursor()
-        cur.execute(""" INSERT INTO listings (search_id, ad_id, title, price, location, image_url, url, published_at, published_text, first_seen_at, seen, interesting) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 0) """, ( search_id, listing["ad_id"], listing.get("title", ""), listing.get("price"), listing.get("location", ""), listing.get("image_url", ""), listing.get("url", ""), listing.get("published_at"), listing.get("published_text", ""), now, ),)
+        cur.execute(""" INSERT INTO listings (search_id, ad_id, title, price, location, image_url, url, published_at, published_text, first_seen_at, seen, interesting) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, FALSE) """, ( search_id, listing["ad_id"], listing.get("title", ""), listing.get("price"), listing.get("location", ""), listing.get("image_url", ""), listing.get("url", ""), listing.get("published_at"), listing.get("published_text", ""), now, ),)
     return True
 
 
@@ -995,7 +995,7 @@ def follow_listing(search_id: int, ad_id: str) -> bool:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), )
         row = cur.fetchone()
-        if exists:
+        if row:
             return False
         cur = conn.cursor()
         cur.execute("INSERT INTO listing_follows ")
