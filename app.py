@@ -630,7 +630,14 @@ def _check_due_searches() -> None:
 
 
 def serve() -> None:
-    db.init_db()
+    print(f"[startup] HOST={config.HOST} PORT={config.PORT}")
+    print(f"[startup] DATABASE_URL={'satt' if config.DATABASE_URL else 'ej satt'}")
+    try:
+        db.init_db()
+        print("[startup] Databas OK")
+    except Exception as exc:
+        print(f"[startup] Databas-FEL: {exc}")
+        print("[startup] Fortsätter ändå — vissa funktioner kan vara trasiga")
     server = ThreadingHTTPServer((config.HOST, config.PORT), Handler)
     print(f"Blocketvakten körs på http://{config.HOST}:{config.PORT}")
 
