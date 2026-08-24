@@ -311,7 +311,11 @@ def create_session(user_id: int) -> str:
     expires = (datetime.now(timezone.utc) + SESSION_TTL).isoformat()
     with connect() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO sessions (token, user_id, created_at, expires_at) ")
+        cur.execute(
+            'INSERT INTO sessions (token, user_id, created_at, expires_at) '
+            'VALUES (%s, %s, %s, %s)',
+            (token, user_id, now, expires),
+        )
     _user_id_by_token[token] = user_id
     return token
 
@@ -374,7 +378,11 @@ def create_reset_token(user_id: int) -> str:
         cur = conn.cursor()
         cur.execute("DELETE FROM reset_tokens WHERE user_id = %s AND expires_at > %s", (user_id, now),)
         cur = conn.cursor()
-        cur.execute("INSERT INTO reset_tokens (token, user_id, created_at, expires_at) ")
+        cur.execute(
+            'INSERT INTO reset_tokens (token, user_id, created_at, expires_at) '
+            'VALUES (%s, %s, %s, %s)',
+            (token, user_id, now, expires),
+        )
     return token
 
 
@@ -899,7 +907,11 @@ def get_setting(key: str, default: str | None = None) -> str | None:
 def set_setting(key: str, value: str) -> None:
     with connect() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ")
+        cur.execute(
+            'INSERT INTO settings (key, value) VALUES (%s, %s) '
+            'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+            (key, value),
+        )
 
 
 def list_recent_logs(user_id: int | None = None, limit: int = 30) -> list[dict]:
@@ -931,7 +943,11 @@ def record_price(search_id: int, ad_id: str, price: int | None) -> None:
     """Append a price snapshot. Called on every check that sees the listing."""
     with connect() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO price_history (search_id, ad_id, price, recorded_at) ")
+        cur.execute(
+            'INSERT INTO price_history (search_id, ad_id, price, recorded_at) '
+            'VALUES (%s, %s, %s, %s)',
+            (search_id, ad_id, price, _now()),
+        )
 
 
 def price_history(search_id: int, ad_id: str, limit: int = 90) -> list[dict]:
