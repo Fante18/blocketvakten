@@ -487,9 +487,16 @@ def create_search(
 ) -> dict:
     now = _now()
     with connect() as conn:
-        cur = conn.cursor()
-        cur.execute(""" INSERT INTO searches (user_id, name, keywords, exclude_words, max_price, location, active, send_email, send_sms, check_interval, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id """, ( user_id, name.strip(), _json(keywords), _json(exclude_words or []), max_price, (location or "").strip(), active, send_email, send_sms, max(check_interval, 60), now, now, ),)
-        search_id = cur.fetchone()["id"]
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            'INSERT INTO searches (user_id, name, keywords, exclude_words, max_price, '
+            'location, active, send_email, send_sms, check_interval, created_at, updated_at) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id',
+            (user_id, name.strip(), _json(keywords), _json(exclude_words or []),
+             max_price, (location or '').strip(), active, send_email, send_sms,
+             max(check_interval, 60), now, now),
+        )
+        search_id = cur.fetchone()['id']
     return get_search(search_id)
 
 
@@ -795,9 +802,16 @@ def overview_statistics(user_id: int | None = None) -> dict:
 
 def create_notification(search_id: int, listing: dict) -> int:
     with connect() as conn:
-        cur = conn.cursor()
-        cur.execute(""" INSERT INTO notifications (search_id, ad_id, title, price, image_url, url, created_at, read) VALUES (%s, %s, %s, %s, %s, %s, %s, 0) """, ( search_id, listing["ad_id"], listing.get("title", ""), listing.get("price"), listing.get("image_url", ""), listing.get("url", ""), _now(), ),)
-        return cur.fetchone()["id"]
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            'INSERT INTO notifications '
+            '(search_id, ad_id, title, price, image_url, url, created_at, read) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE) RETURNING id',
+            (search_id, listing['ad_id'], listing.get('title', ''),
+             listing.get('price'), listing.get('image_url', ''),
+             listing.get('url', ''), _now()),
+        )
+        return cur.fetchone()['id']
 
 
 def list_notifications(
