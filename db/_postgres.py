@@ -591,9 +591,18 @@ def mark_checked(
     now = _now()
     with connect() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE searches SET last_checked_at = %s, last_error = %s, ")
-        cur = conn.cursor()
-        cur.execute(""" INSERT INTO check_logs (search_id, checked_at, status, message, fetched_count, new_count) VALUES (%s, %s, %s, %s, %s, %s) """, (search_id, now, status, message, fetched_count, new_count),)
+        cur.execute(
+            'UPDATE searches SET last_checked_at = %s, last_error = %s, '
+            'last_new_count = %s WHERE id = %s',
+            (now, message if status == 'error' else None, new_count, search_id),
+        )
+        cur2 = conn.cursor()
+        cur2.execute(
+            'INSERT INTO check_logs '
+            '(search_id, checked_at, status, message, fetched_count, new_count) '
+            'VALUES (%s, %s, %s, %s, %s, %s)',
+            (search_id, now, status, message, fetched_count, new_count),
+        )
 
 
 # --------------------------------------------------------------------------
