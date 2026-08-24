@@ -209,48 +209,31 @@ def connect():
 
 
 def init_db() -> None:
-    config.ensure_dirs()
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
 
-        # Migrate: add columns to searches.
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(searches)")
-        for col, decl in [
-            ("send_email", "INTEGER NOT NULL DEFAULT 0"),
-            ("send_sms", "INTEGER NOT NULL DEFAULT 0"),
-            ("check_interval", "INTEGER NOT NULL DEFAULT 1800"),
-            ("user_id", "INTEGER NOT NULL DEFAULT 0"),
-        ]:
-            if col not in columns:
-                cur = conn.cursor()
-                cur.execute(f"ALTER TABLE searches ADD COLUMN {col} {decl}")
-
-        # Migrate: add columns to listings.
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(listings)")
-        for col, decl in [
-            ("resale_price", "INTEGER"),
-            ("deal_score", "REAL"),
-        ]:
-            if col not in listing_cols:
-                cur = conn.cursor()
-                cur.execute(f"ALTER TABLE listings ADD COLUMN {col} {decl}")
-
-        # Ensure a default user exists for migration from pre-auth installs.
+        # Ensure a default user (id=0) exists for pre-auth migration installs.
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM users LIMIT 1")
+        cur.execute('SELECT 1 FROM users LIMIT 1')
+        has_users = cur.fetchone()
         if not has_users:
-            cur = conn.cursor()
-            cur.execute("INSERT INTO users (id, email, password_hash, created_at) ")
+            cur2 = conn.cursor()
+            cur2.execute(
+                'INSERT INTO users (id, email, password_hash, created_at) '
+                'VALUES (0, %s, %s, %s)',
+                ('', '', _now()),
+            )
 
-        # Assign orphaned searches (user_id=0) to the first real user if one exists.
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id FROM users WHERE id != 0 ORDER BY id LIMIT 1")
+        # Assign orphaned searches (user_id=0) to the first real user.
+        cur.execute('SELECT id FROM users WHERE id != 0 ORDER BY id LIMIT 1')
+        real_user = cur.fetchone()
         if real_user:
-            cur = conn.cursor()
-            cur.execute("UPDATE searches SET user_id = %s WHERE user_id = 0", (real_user["id"],),)
+            cur2 = conn.cursor()
+            cur2.execute(
+                'UPDATE searches SET user_id = %s WHERE user_id = 0',
+                (real_user['id'],),
+            )
 
 
 # --------------------------------------------------------------------------
