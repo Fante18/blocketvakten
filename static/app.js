@@ -77,7 +77,7 @@ async function api(method, path, body) {
     showLogin();
     throw new Error("Unauthorized");
   }
-  if (!res.ok && res.status !== 400 && res.status !== 401 && res.status !== 404 && res.status !== 409) {
+  if (!res.ok && res.status !== 400 && res.status !== 401 && res.status !== 404 && res.status !== 409 && res.status !== 500 && res.status !== 502 && res.status !== 503) {
     throw new Error(`HTTP ${res.status}`);
   }
   return res.json();
