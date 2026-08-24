@@ -684,9 +684,15 @@ function init() {
   });
   $("forgot-submit-btn").addEventListener("click", async () => {
     var email = $("forgot-email").value.trim();
-    if (!email) return;
-    var data = await api("POST", "/api/auth/forgot-password", { email: email });
-    $("forgot-msg").textContent = data.message || data.error || "";
+    if (!email) {
+      $("forgot-msg").textContent = "Ange din e-postadress.";
+      $("forgot-msg").hidden = false;
+      return;
+    }
+    $("forgot-submit-btn").disabled = true;
+    try {
+      var data = await api("POST", "/api/auth/forgot-password", { email: email });
+      $("forgot-msg").textContent = data.message || data.error || "";
     $("forgot-msg").hidden = false;
     // If SMTP is not configured, the API returns the reset token directly.
     if (data.token) {
@@ -694,8 +700,14 @@ function init() {
       $("forgot-token-link").href = resetUrl;
       $("forgot-token-link").textContent = resetUrl;
       $("forgot-token-box").hidden = false;
-    } else {
-      $("forgot-token-box").hidden = true;
+      } else {
+        $("forgot-token-box").hidden = true;
+      }
+    } catch (err) {
+      $("forgot-msg").textContent = "Kunde inte skicka återställningen. Försök igen eller kontrollera SMTP-inställningarna.";
+      $("forgot-msg").hidden = false;
+    } finally {
+      $("forgot-submit-btn").disabled = false;
     }
   });
   $("reset-submit-btn").addEventListener("click", async () => {

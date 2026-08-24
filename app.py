@@ -262,10 +262,10 @@ def route(handler, method: str, path: str) -> None:
             import notifier
             sent = notifier.send_reset_email(email, token)
             if not sent:
-                # SMTP not configured — return the token so the UI can show it directly.
+                # SMTP unavailable or timed out — show the one-time link in-app.
                 result["token"] = token
                 result["message"] = (
-                    "E-postserver är inte konfigurerad. "
+                    "Återställningsmail kunde inte skickas just nu. "
                     "Använd återställningslänken nedan för att sätta ett nytt lösenord."
                 )
         return json_response(handler, result)

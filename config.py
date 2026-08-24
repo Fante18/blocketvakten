@@ -14,6 +14,8 @@ STATIC_DIR = BASE_DIR / "static"
 # to a hosted PostgreSQL database (Railway / Render / Supabase / …).
 # Most platforms set this automatically; you can also provide it manually.
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
+# Public URL used in password-reset links. Set this to your Railway domain.
+APP_URL = os.environ.get('BLOCKETVAKTEN_APP_URL', '').rstrip('/')
 
 _default_host = "0.0.0.0" if DATABASE_URL else "127.0.0.1"
 HOST = os.environ.get("BLOCKETVAKTEN_HOST", _default_host)

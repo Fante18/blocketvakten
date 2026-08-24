@@ -77,7 +77,7 @@ def send_email_for_listings(
     msg.add_alternative(body_html, subtype="html")
 
     try:
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as server:
             server.ehlo()
             if config.SMTP_USE_TLS:
                 server.starttls()
@@ -127,7 +127,7 @@ Från {html.escape(old_p)} → <strong style="color:#1e8e3e">{html.escape(new_p)
     msg.add_alternative(body_html, subtype="html")
 
     try:
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as server:
             server.ehlo()
             if config.SMTP_USE_TLS:
                 server.starttls()
@@ -168,7 +168,8 @@ def send_reset_email(email: str, token: str) -> bool:
     if not config.EMAIL_ENABLED or not email:
         return False
     import html as _html
-    reset_url = f"http://{config.HOST}:{config.PORT}/?reset={token}&email={_html.escape(email, quote=True)}"
+    base_url = config.APP_URL or f"http://127.0.0.1:{config.PORT}"
+    reset_url = f"{base_url}/?reset={token}&email={_html.escape(email, quote=True)}"
     msg = EmailMessage()
     msg["Subject"] = "Aterstall ditt losenord"
     msg["From"] = config.EMAIL_FROM
@@ -195,7 +196,7 @@ def send_reset_email(email: str, token: str) -> bool:
     msg.set_content(body)
     msg.add_alternative(body_html, subtype="html")
     try:
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as server:
             server.ehlo()
             if config.SMTP_USE_TLS: server.starttls(); server.ehlo()
             if config.SMTP_USER: server.login(config.SMTP_USER, config.SMTP_PASSWORD)
