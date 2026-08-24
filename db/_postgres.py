@@ -180,17 +180,32 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_pool = None
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        url = config.DATABASE_URL
+        if not url:
+            raise RuntimeError('DATABASE_URL is not set')
+        _pool = psycopg2.pool.ThreadedConnectionPool(2, 20, url)
+    return _pool
+
+
 @contextmanager
 def connect():
-    return _get_conn_or_pool()  # placeholder - will fix below
-    conn.row_factory = psycopg2.extras.RealDictCursor
-    cur = conn.cursor()
-    cur.execute("PRAGMA foreign_keys = ON")
+    pool = _get_pool()
+    conn = pool.getconn()
+    conn.autocommit = False
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 
 def init_db() -> None:
