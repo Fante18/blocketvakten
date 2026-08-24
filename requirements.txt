@@ -1,0 +1,4 @@
+# Blocketvakten cloud dependencies
+# psycopg2-binary is only needed when DATABASE_URL is set (PostgreSQL mode).
+# The app runs fine without it using local SQLite.
+psycopg2-binary>=2.9,<3

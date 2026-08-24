@@ -1,0 +1,18 @@
+{
+  "name": "Blocketvakten",
+  "short_name": "Blocketvakten",
+  "description": "Bevakar dina Blocket-sökningar och notifierar direkt när nya annonser dyker upp.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#d32f2f",
+  "lang": "sv",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23d32f2f'/><text x='50' y='66' font-size='52' text-anchor='middle' fill='white'>🔔</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

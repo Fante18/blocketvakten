@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#d32f2f" />
+  <title>Blocketvakten</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="brand" id="brand-btn" aria-label="Till bevakningar">
+        <span class="brand-dot"></span>
+        <span>Blocketvakten</span>
+      </button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="check-btn" title="Kolla nu" aria-label="Kolla nu">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <button class="icon-btn bell-btn" id="bell-btn" title="Notiser" aria-label="Notiser">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          <span class="badge" id="bell-badge" hidden>0</span>
+        </button>
+        <button class="icon-btn" id="logout-btn" title="Logga ut" aria-label="Logga ut" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="notif-drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h2>Notiser</h2>
+      <button class="link-btn" id="notif-read-btn">Markera lästa</button>
+    </div>
+    <div id="notif-list" class="notif-list"></div>
+  </div>
+  <div id="drawer-scrim" class="scrim" hidden></div>
+
+  <main>
+    <!-- Home / list of watches -->
+    <section id="view-home">
+      <div class="home-head">
+        <div>
+          <h1>Dina bevakningar</h1>
+          <p class="muted" id="home-sub">Håller koll på nya Blocket-annonser åt dig.</p>
+        </div>
+      </div>
+      <div id="search-list"></div>
+      <div class="empty" id="home-empty" hidden>
+        <div class="empty-emoji">🔍</div>
+        <h2>Inga bevakningar än</h2>
+        <p class="muted">Lägg till din första bevakning för att börja få notiser när nya annonser dyker upp.</p>
+      </div>
+      <div class="fab-row">
+        <button class="btn btn-primary btn-lg" id="add-btn">+ Lägg till bevakning</button>
+      </div>
+      <div class="logs-link">
+        <button class="link-btn" id="logs-btn">Visa körhistorik</button>
+        <span class="muted">·</span>
+        <button class="link-btn" id="stats-btn">Statistik</button>
+        <span class="muted">·</span>
+        <button class="link-btn" id="settings-btn">Profil & inställningar</button>
+      </div>
+    </section>
+
+    <!-- Add / edit -->
+    <section id="view-form" hidden>
+      <button class="back-btn" id="form-back">← Tillbaka</button>
+      <h1 id="form-title">Lägg till bevakning</h1>
+      <form id="search-form" autocomplete="off">
+        <label>
+          <span>Namn <em class="muted">(valfritt)</em></span>
+          <input type="text" id="f-name" placeholder="t.ex. Golfklubbor" />
+        </label>
+        <label>
+          <span>Sökord <em class="muted">– ett eller flera, komma/radbrytning</em></span>
+          <textarea id="f-keywords" rows="3" placeholder="Cobra King F8&#10;Forerunner 965, FR965" required></textarea>
+          <small class="muted">Varje rad/komma blir en egen sökning och bevakas som en variant.</small>
+        </label>
+        <label>
+          <span>Exkludera ord <em class="muted">(valfritt)</em></span>
+          <input type="text" id="f-exclude" placeholder="trasig, reservdelar, sökes" />
+        </label>
+        <div class="form-row">
+          <label>
+            <span>Max-pris <em class="muted">(kr)</em></span>
+            <input type="number" id="f-price" min="0" inputmode="numeric" placeholder="t.ex. 5000" />
+          </label>
+          <label>
+            <span>Område/ort <em class="muted">(valfritt)</em></span>
+            <input type="text" id="f-location" placeholder="t.ex. Stockholm" />
+          </label>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="f-active" checked />
+          <span>Aktiv bevakning</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="f-send-email" />
+          <span>Skicka e-post för nya träffar</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="f-send-sms" />
+          <span>Skicka SMS för nya träffar</span>
+        </label>
+        <small class="muted">E-post/SMS skickas bara om du har angett adress/nummer i profilen och servern är konfigurerad.</small>
+        <label>
+          <span>Kontrollfrekvens</span>
+          <select id="f-interval">
+            <option value="60">Varje minut</option>
+            <option value="1800" selected>Var 30:e minut</option>
+            <option value="3600">Varje timme</option>
+            <option value="7200">Varannan timme</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="form-cancel">Avbryt</button>
+          <button type="submit" class="btn btn-primary">Spara bevakning</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Feed -->
+    <section id="view-feed" hidden>
+      <button class="back-btn" id="feed-back">← Bevakningar</button>
+      <div class="feed-head">
+        <h1 id="feed-title">Flöde</h1>
+        <p class="muted" id="feed-sub"></p>
+        <label class="sort-select" style="margin-top: 0.5rem">
+          <span>Sortering:</span>
+          <select id="feed-sort">
+            <option value="newest">Nyast först</option>
+            <option value="cheapest">Billigast först</option>
+            <option value="most_expensive">Dyrast först</option>
+            <option value="best_deal">Bästa fynd först (Deal Score)</option>
+          </select>
+        </label>
+      </div>
+      <div class="stat-grid" id="feed-stats"></div>        <div class="feed-actions">
+        <button class="btn btn-ghost" id="feed-mark-seen">Markera alla som sedda</button>
+        <button class="btn btn-ghost" id="feed-edit">Redigera bevakning</button>
+        <button class="btn btn-ghost" id="feed-price-history-btn">Prishistorik</button>
+      </div>
+      <div id="feed-stat-detail"></div>
+      <div id="feed-price-history" hidden>
+        <div class="stat-detail">
+          <h2>Prishistorik</h2>
+          <div id="price-history-graph" class="price-graph"></div>
+        </div>
+      </div>
+      <div id="listing-list"></div>
+      <div class="empty" id="feed-empty" hidden>
+        <div class="empty-emoji">🕰️</div>
+        <h2>Inga träffar än</h2>
+        <p class="muted">När en matchande annons dyker upp visas den här och du får en notis.</p>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" hidden>
+      <button class="back-btn" id="settings-back">← Tillbaka</button>
+      <h1>Profil & inställningar</h1>
+      <p class="muted">Ange vart e-postnotiser ska skickas och välj push-notiser i webbläsaren.</p>
+      <div id="settings-panel" class="settings-panel">
+        <label>
+          <span>E-postadress för notiser</span>
+          <input type="email" id="profile-email" placeholder="du@exempel.se" autocomplete="email" />
+        </label>
+        <label>
+          <span>Telefonnummer för SMS-notiser</span>
+          <input type="tel" id="profile-phone" placeholder="+46701234567" autocomplete="tel" />
+        </label>
+        <small class="muted" id="email-hint">SMTP är inte konfigurerad på servern.</small>
+        <label>
+          <span>Snabbmeddelande (kopieras till urklipp vid klick)</span>
+          <textarea id="profile-quick-msg" rows="3" placeholder="Hej! Är den kvar? Kan jag hämta idag?" style="width:100%" autocomplete="off"></textarea>
+          <small class="muted">Används som mall för "Kopiera meddelande"-knappen vid varje annons. Stödjer {title} och {price} som variabler.</small>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="set-push" checked />
+          <span>Push-notis i webbläsaren</span>
+        </label>
+        <small class="muted">Visas som en webbläsar-notis medan appen är öppen (fliken kan vara i bakgrunden).</small>
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" id="set-save">Spara profil</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Statistics overview -->
+    <section id="view-stats" hidden>
+      <button class="back-btn" id="stats-back">← Tillbaka</button>
+      <div class="feed-head">
+        <h1>Statistik</h1>
+        <p class="muted">Upptäckter och prisinsikt för alla dina bevakningar.</p>
+      </div>
+      <div class="stat-grid" id="overview-stat-cards"></div>
+      <div id="overview-stat-list"></div>
+    </section>
+
+    <!-- Logs -->
+    <section id="view-logs" hidden>
+      <button class="back-btn" id="logs-back">← Tillbaka</button>
+      <h1>Körhistorik</h1>
+      <p class="muted">Senaste kontroller – här syns det tydligt om parsningen av Blocket slutar fungera.</p>
+      <div id="log-list"></div>
+    </section>
+
+    <!-- Login -->
+    <section id="view-login" hidden>
+      <div class="auth-card">
+        <div class="auth-header">
+          <span class="brand-dot" style="background:var(--red);width:16px;height:16px"></span>
+          <h1>Blocketvakten</h1>
+          <p class="muted">Logga in eller skapa konto för att spara dina bevakningar.</p>
+        </div>
+        <form id="auth-form" autocomplete="off">
+          <label>
+            <span>E-post</span>
+            <input type="email" id="auth-email" placeholder="du@exempel.se" autocomplete="email" required />
+          </label>
+          <label>
+            <span>Lösenord</span>
+            <input type="password" id="auth-password" placeholder="minst 4 tecken" autocomplete="current-password" required minlength="4" />
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="auth-toggle-mode">Skapa konto</button>
+            <button type="submit" class="btn btn-primary" id="auth-submit">Logga in</button>
+          </div>
+          <p class="muted auth-error" id="auth-error" hidden></p>
+        </form>
+        <button type="button" class="link-btn" id="forgot-pw-btn" style="display:block;margin-top:8px">Glömt lösenord?</button>
+        <!-- Forgot password state (hidden by default) -->
+        <div id="forgot-pw-state" hidden>
+          <p class="muted" style="margin-top:14px">Ange din e-postadress så skickar vi en återställningslänk.</p>
+          <label><span>E-post</span>
+            <input type="email" id="forgot-email" placeholder="du@exempel.se" autocomplete="email" />
+          </label>
+          <div class="form-actions" style="margin-top:10px">
+            <button type="button" class="btn btn-ghost" id="forgot-back-btn">Tillbaka</button>
+            <button type="button" class="btn btn-primary" id="forgot-submit-btn">Skicka länk</button>
+          </div>
+          <p class="muted auth-error" id="forgot-msg" hidden></p>
+          <div id="forgot-token-box" hidden style="margin-top:12px;padding:10px;background:var(--surface);border-radius:8px;border:1px solid var(--red)">
+            <p class="muted" style="margin:0 0 8px">E-postservern är inte konfigurerad — använd länken nedan direkt:</p>
+            <a id="forgot-token-link" href="#" style="word-break:break-all;font-size:13px;color:var(--red)"></a>
+          </div>
+        </div>
+        <!-- Reset password state (hidden by default, triggered via URL) -->
+        <div id="reset-pw-state" hidden>
+          <p class="muted" style="margin-top:14px">Välj ett nytt lösenord.</p>
+          <label><span>Nytt lösenord</span>
+            <input type="password" id="reset-password" placeholder="minst 4 tecken" minlength="4" />
+          </label>
+          <div class="form-actions" style="margin-top:10px">
+            <button type="button" class="btn btn-primary" id="reset-submit-btn">Spara lösenord</button>
+          </div>
+          <p class="muted auth-error" id="reset-msg" hidden></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
