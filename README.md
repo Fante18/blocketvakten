@@ -3,8 +3,8 @@
 En webbapp som bevakar dina Blocket-sökningar och notifierar direkt när en ny
 annons dyker upp – så slipper du scrolla manuellt varje dag.
 
-Appen är helt fristående (endast Pythons standardbibliotek, ingen
-paketinstallation) och lagrar allt i SQLite under `data/`.
+Lokalt kan appen köras utan externa paket och lagrar data i SQLite under `data/`.
+För PostgreSQL/molndrift installeras beroendena från `requirements.txt`.
 
 ## Funktioner
 
@@ -25,7 +25,11 @@ paketinstallation) och lagrar allt i SQLite under `data/`.
   flest nya annonser.
 - **Prishistorik** – pris sparas vid varje kontroll. Graf per bevakning med
   lägsta-, högsta- och snittpris per dag.
-- **Prisbevakning** – följ en specifik annons och få notis om priset sänks.
+- **Prisbevakning** – följ en specifik annons och få deduplicerat prisfallslarm. Ställ minsta prisfall i kronor och procent per annons.
+- **Återförsäljningskalkyl** – spara inköpspris, förväntat försäljningspris, transport, reparation, avgifter, övriga kostnader och arbetstid. Appen visar totalkostnad, beräknad nettovinst, marginal, ROI och break-even. Efter försäljning kan verkligt pris och faktiska kostnader sparas separat.
+- **Prioriteringslista** – Deal Score 0–100 väger samman rabatt, potentiell vinst, datakvalitet, annonsålder och riskord som "trasig" eller "reservdelar". Flödet kan sorteras efter bästa affär och filtreras efter lönsamhetsgräns.
+- **Lagerflöde** – följ objekt från nytt fynd via kontakt, köp, renovering och publicering till såld, avstått eller förlorad. Spara kategori, kostnader, anteckningar och faktisk vinst.
+- **Lönsamhetsstatistik** – välj 7, 30 eller 90 dagar och se investerat kapital, bundet kapital, faktisk/beräknad vinst, försäljningsgrad och resultat per bevakning och kategori.
 - **Valbar kontrollfrekvens** – varje bevakning kan ställas in på
   1 minut / 30 min / 1 tim / 2 tim. Bakgrundsjobbet kollar bara bevakningar
   vars intervall förflutit.
@@ -60,14 +64,25 @@ Snabbversionen:
 
 1. Pusha repot till GitHub
 2. Skapa ett Railway-konto → **Deploy from GitHub repo**
-3. Lägg till PostgreSQL (Railway sätter automatiskt )
-4. Sätt SMTP-variabler under **Variables**
-5. Kör  för att flytta befintlig data
+3. Lägg till PostgreSQL och koppla dess `DATABASE_URL` till appen
+4. Sätt Brevo API-variabler under **Variables**
+5. Kör `python migrate_to_postgres.py` för att flytta befintlig data
 
-Appen byter automatiskt till PostgreSQL när  är satt – lokalt
-fortsätter SQLite fungera precis som tidigare.
+Appen byter automatiskt till PostgreSQL när `DATABASE_URL` är satt – lokalt
+fortsätter SQLite fungera precis som tidigare. Vid start skapas nya affärstabeller
+med additiva migrationer; befintliga konton, bevakningar och annonser raderas inte.
 
-##
+## Affärsfunktioner
+
+Öppna en annons i flödet och expandera **Ekonomi & lager** för att fylla i kalkylen
+och välja lagerstatus. Knappen **Lager** visar sparade objekt och bundet kapital.
+Under **Statistik** kan du välja period och jämföra vilka bevakningar och kategorier
+som ger faktisk vinst. **Följ pris** aktiverar ett prisfallslarm med standardgränsen
+500 kr eller 5 procent; inställningen kan ändras med **Prisfall**.
+
+Alla affärstabeller innehåller `user_id` och API:t kontrollerar dessutom att den
+kopplade bevakningen tillhör den inloggade användaren.
+
 ## Köra
 
 ```bash
@@ -255,9 +270,9 @@ python -m unittest discover -s tests -v
 - `app.py` – HTTP-server, JSON-API och schemaläggare
 - `blocket.py` – bygger sök-URL:er, hämtar och parsar Blocket-HTML
 - `monitor.py` – filtrering, dedupe på annons-id och notis-skapande
-- `db.py` – SQLite-datalager
-- `notifier.py` – e-post via SMTP
+- `db/` – SQLite- och PostgreSQL-datalager med additiva migrationer
+- `business.py` – användarägd ekonomi, lager, påminnelser, prisfall och statistik
+- `profit.py` – rena formler för nettovinst, marginal, ROI, risk och Deal Score
+- `notifier.py` – e-post via Brevo HTTPS API eller SMTP
 - `config.py` – inställningar
 - `static/` – mobil-först frontend (vanilla JS)
-#   b l o c k e t v a k t e n  
- 

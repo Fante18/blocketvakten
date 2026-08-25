@@ -115,12 +115,45 @@ python migrate_to_postgres.py
 DATABASE_URL hittar du i Railway: klicka på PostgreSQL-databasen → **Connect** →
 kopiera **Postgres Connection URL**.
 
-## Steg 5 – Testa
+## Steg 5 – Nya affärsfunktioner
+
+Efter deploy skapar appen automatiskt följande additiva PostgreSQL-tabeller:
+
+- `listing_finance` för kalkyl, faktiska köp-/försäljningskostnader och lagerstatus
+- `listing_reminders` för uppföljningar
+- `price_drop_settings` och `price_drop_events` för tröskelstyrda, deduplicerade prisfall
+
+Du behöver inte köra ett separat SQL-script och befintliga tabeller raderas inte.
+Startloggens `Databas OK` betyder att både grundschema och affärsschema kunde initieras.
+
+I appen:
+
+1. Öppna ett annonskort och expandera **Ekonomi & lager**.
+2. Fyll i inköpspris, förväntad försäljning och kostnader.
+3. Välj lagerstatus och spara. Efter försäljning fyller du i faktiskt pris och faktiska kostnader.
+4. Använd **Lager** för bundet kapital och aktiva objekt.
+5. Använd **Statistik** och välj 7, 30 eller 90 dagar för att jämföra bevakningar och kategorier.
+6. Klicka **Följ pris** på en annons för att aktivera prisfallslarm. Standard är minst 500 kr eller 5 procent; **Prisfall** ändrar gränserna.
+
+## Steg 6 – Testa
 
 1. Railway ger dig en publik URL (t.ex. `https://blocketvakten.up.railway.app`)
 2. Öppna länken i webbläsaren
 3. Skapa ett konto eller logga in med ditt migrerade konto
 4. Allt fungerar precis som tidigare!
+
+## Uppdatera efter kodändringar
+
+När funktionerna har testats lokalt:
+
+```powershell
+git add .
+git commit -m "Lägg till affärskalkyl och lagerflöde"
+git push
+```
+
+Railway deployar den nya versionen från GitHub. Databasmigrationerna körs vid
+appstart och är avsedda att vara säkra att köra flera gånger.
 
 ## Arkitektur
 
@@ -138,6 +171,8 @@ kopiera **Postgres Connection URL**.
 | "DATABASE_URL is not set" | Se till att du lagt till PostgreSQL som en databas i Railway-projektet |
 | "psycopg2 not found" | `requirements.txt` måste innehålla `psycopg2-binary` |
 | E-post fungerar inte | Dubbelkolla miljövariablerna under **Variables**. Kom ihåg `BLOCKETVAKTEN_HOST=0.0.0.0` |
+| `listing_finance` saknas | Kontrollera att senaste deployen körs och startloggen visar `Databas OK`. Starta om/redeploya appen så körs den additiva migrationen. |
+| Statistik saknar faktisk vinst | Spara objektet som `Såld` och fyll i faktiskt försäljningspris samt faktiska kostnader i annonsens kalkyl. |
 | Migrering misslyckas | Kontrollera att DATABASE_URL är korrekt och att din IP har åtkomst till Postgres |
 
 ## Kostnad

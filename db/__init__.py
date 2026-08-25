@@ -3,11 +3,12 @@
 import config
 
 _USE_POSTGRES = False
+_backend_is_postgres = False
 
 if config.DATABASE_URL:
     try:
         from db._postgres import *
-        _USE_POSTGRES = True
+        _backend_is_postgres = True
     except ImportError:
         print('[db] psycopg2 saknas — faller tillbaka till SQLite')
         from db._sqlite import *
@@ -17,3 +18,7 @@ if config.DATABASE_URL:
         from db._sqlite import *
 else:
     from db._sqlite import *
+
+# Keep the selected backend visible to feature modules without relying on
+# symbols imported through __all__.
+_USE_POSTGRES = _backend_is_postgres

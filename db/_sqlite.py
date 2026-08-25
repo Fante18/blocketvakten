@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS searches (
     last_checked_at TEXT,
     last_error TEXT,
     last_new_count INTEGER NOT NULL DEFAULT 0,
+    min_profit REAL NOT NULL DEFAULT 0,
+    min_margin REAL NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -202,6 +204,8 @@ def init_db() -> None:
             ("send_sms", "INTEGER NOT NULL DEFAULT 0"),
             ("check_interval", "INTEGER NOT NULL DEFAULT 1800"),
             ("user_id", "INTEGER NOT NULL DEFAULT 0"),
+            ("min_profit", "REAL NOT NULL DEFAULT 0"),
+            ("min_margin", "REAL NOT NULL DEFAULT 0"),
         ]:
             if col not in columns:
                 conn.execute(f"ALTER TABLE searches ADD COLUMN {col} {decl}")
@@ -479,6 +483,8 @@ def create_search(
     send_email: bool = False,
     send_sms: bool = False,
     check_interval: int = 1800,
+    min_profit: float = 0,
+    min_margin: float = 0,
 ) -> dict:
     now = _now()
     with connect() as conn:
@@ -486,8 +492,8 @@ def create_search(
             """
             INSERT INTO searches
                 (user_id, name, keywords, exclude_words, max_price, location,
-                 active, send_email, send_sms, check_interval, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 active, send_email, send_sms, check_interval, min_profit, min_margin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -500,6 +506,8 @@ def create_search(
                 1 if send_email else 0,
                 1 if send_sms else 0,
                 max(check_interval, 60),
+                max(float(min_profit or 0), 0),
+                max(float(min_margin or 0), 0),
                 now,
                 now,
             ),
@@ -541,6 +549,7 @@ def update_search(search_id: int, fields: dict) -> dict | None:
     allowed = {
         "name", "keywords", "exclude_words", "max_price", "location",
         "active", "send_email", "send_sms", "check_interval", "pause_until",
+        "min_profit", "min_margin",
     }
     updates = {}
     for key, value in fields.items():
@@ -561,6 +570,11 @@ def update_search(search_id: int, fields: dict) -> dict | None:
                 updates[key] = max(int(value), 60)
             except (TypeError, ValueError):
                 updates[key] = 1800
+        elif key in {"min_profit", "min_margin"}:
+            try:
+                updates[key] = max(float(value or 0), 0)
+            except (TypeError, ValueError):
+                updates[key] = 0
         elif key == "pause_until":
             updates[key] = value or None
         elif key == "location":
@@ -625,6 +639,19 @@ def insert_listing(search_id: int, listing: dict) -> bool:
             (search_id, listing["ad_id"]),
         ).fetchone()
         if exists:
+            conn.execute(
+                """
+                UPDATE listings SET title = ?, price = ?, location = ?, image_url = ?,
+                    url = ?, published_at = ?, published_text = ?
+                WHERE search_id = ? AND ad_id = ?
+                """,
+                (
+                    listing.get("title", ""), listing.get("price"), listing.get("location", ""),
+                    listing.get("image_url", ""), listing.get("url", ""),
+                    listing.get("published_at"), listing.get("published_text", ""),
+                    search_id, listing["ad_id"],
+                ),
+            )
             return False
         conn.execute(
             """
@@ -929,25 +956,22 @@ def get_profile(user_id: int | None = None) -> dict:
         profile = {}
     if not isinstance(profile, dict):
         profile = {}
-    if uid == 0:
-        return {
-            "email": str(profile.get("email") or config.EMAIL_TO or "").strip(),
-            "phone": str(profile.get("phone") or "").strip(),
-        }
     return {
-        "email": str(profile.get("email") or "").strip(),
+        "email": str(profile.get("email") or (config.EMAIL_TO if uid == 0 else "") or "").strip(),
         "phone": str(profile.get("phone") or "").strip(),
+        "quick_message": str(profile.get("quick_message") or "").strip(),
     }
 
 
 def set_profile(user_id: int, profile: dict) -> dict:
     email = str(profile.get("email") or "").strip()
     phone = str(profile.get("phone") or "").strip()
+    quick_message = str(profile.get("quick_message") or "").strip()
     set_setting(
         _profile_key(user_id),
-        json.dumps({"email": email, "phone": phone}, ensure_ascii=False),
+        json.dumps({"email": email, "phone": phone, "quick_message": quick_message}, ensure_ascii=False),
     )
-    return {"email": email, "phone": phone}
+    return {"email": email, "phone": phone, "quick_message": quick_message}
 
 
 def get_setting(key: str, default: str | None = None) -> str | None:

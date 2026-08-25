@@ -85,7 +85,7 @@ async function api(method, path, body) {
 
 /* ---------------- views ---------------- */
 
-const VIEWS = ["view-home", "view-form", "view-feed", "view-logs", "view-settings", "view-stats", "view-login"];
+const VIEWS = ["view-home", "view-form", "view-feed", "view-logs", "view-settings", "view-stats", "view-inventory", "view-login"];
 function show(viewId) {
   if (!state.token && viewId !== "view-login") {
     showLogin();
@@ -96,6 +96,7 @@ function show(viewId) {
   if (viewId === "view-home") loadHome();
   if (viewId === "view-logs") loadLogs();
   if (viewId === "view-stats") loadOverviewStats();
+  if (viewId === "view-inventory") loadInventory();
 }
 
 /* ---------------- home ---------------- */
@@ -194,6 +195,8 @@ function openForm(search) {
   $("f-send-email").checked = search ? !!search.send_email : false;
   $("f-send-sms").checked = search ? !!search.send_sms : false;
   $("f-interval").value = search?.check_interval || "1800";
+  $("f-min-profit").value = search?.min_profit ?? "";
+  $("f-min-margin").value = search?.min_margin ?? "";
   $("search-form").dataset.id = search?.id || "";
   show("view-form");
 }
@@ -211,6 +214,8 @@ async function submitForm(e) {
     send_email: $("f-send-email").checked,
     send_sms: $("f-send-sms").checked,
     check_interval: Number($("f-interval").value) || 1800,
+    min_profit: Number($("f-min-profit").value) || 0,
+    min_margin: Number($("f-min-margin").value) || 0,
   };
   if (id) {
     await api("PUT", `/api/searches/${id}`, payload);
@@ -227,7 +232,8 @@ async function submitForm(e) {
 
 async function openFeed(id) {
   const sort = ($("feed-sort") && $("feed-sort").value) || "newest";
-  const data = await api("GET", `/api/searches/${id}/listings?sort=${sort}`);
+  const profitable = $("feed-profitable")?.checked ? "&profitable=1" : "";
+  const data = await api("GET", `/api/searches/${id}/listings?sort=${sort}${profitable}`);
   state.currentSearch = data.search;
   const s = data.search;
   $("feed-title").textContent = s.name || s.keywords.join(" · ");
@@ -273,6 +279,25 @@ function renderSearchStats(stats) {
     </div>`;
 }
 
+function statusLabel(status) {
+  return ({ new: 'Nytt fynd', contacted: 'Kontaktad', bought: 'Köpt', under_repair: 'Under renovering', ready: 'Klar att sälja', published: 'Publicerad', sold: 'Såld', declined: 'Avstått', lost: 'Förlorad' })[status] || 'Nytt fynd';
+}
+
+function statusOptions(selected) {
+  const statuses = [['new','Nytt fynd'],['contacted','Kontaktad'],['bought','Köpt'],['under_repair','Under renovering'],['ready','Klar att sälja'],['published','Publicerad'],['sold','Såld'],['declined','Avstått'],['lost','Förlorad']];
+  return statuses.map(([value, label]) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+function businessSummary(l) {
+  const expected = l.expected_profit;
+  const actual = l.actual_profit;
+  const rows = [];
+  if (expected != null) rows.push(`<span>Beräknad vinst <b class="${expected >= 0 ? 'profit-positive' : 'profit-negative'}">${expected >= 0 ? '+' : ''}${formatPrice(expected)}</b></span>`);
+  if (actual != null) rows.push(`<span>Faktisk vinst <b class="${actual >= 0 ? 'profit-positive' : 'profit-negative'}">${actual >= 0 ? '+' : ''}${formatPrice(actual)}</b></span>`);
+  if (l.break_even_price != null) rows.push(`<span>Break-even <b>${formatPrice(l.break_even_price)}</b></span>`);
+  return rows.length ? rows.join('') : '<span class="muted">Fyll i förväntad försäljning för att se nettovinsten.</span>';
+}
+
 function listingCard(l) {
   const img = l.image_url
     ? `<img class="listing-img" src="${esc(l.image_url)}" alt="" loading="lazy"
@@ -281,13 +306,14 @@ function listingCard(l) {
 
   const tags = [];
   if (l.good_price) tags.push('<span class="tag good">💚 Bra pris</span>');
-  // Deal score tag
+  // Deal Score is a 0–100 opportunity score; discount_pct is the separate
+  // market-price comparison and must not be presented as the score.
   if (l.deal_score != null) {
-    const cls = l.deal_score >= 10 ? 'deal-score great' : (l.deal_score > 0 ? 'deal-score' : '');
-    if (cls) {
-      const prefix = l.deal_score > 0 ? '↓' : (l.deal_score < 0 ? '↑' : '');
-      tags.push(`<span class="tag ${cls}">${prefix}${Math.abs(l.deal_score)}% ${l.deal_score > 0 ? 'under' : 'över'} snitt</span>`);
-    }
+    const cls = l.deal_score >= 70 ? 'deal-score great' : 'deal-score';
+    tags.push(`<span class="tag ${cls}">⚡ Deal Score ${l.deal_score}/100</span>`);
+  }
+  if (l.discount_pct != null && l.discount_pct > 0) {
+    tags.push(`<span class="tag deal-score">↓ ${l.discount_pct}% under marknad</span>`);
   }
   if (!l.seen) tags.push('<span class="tag new">Ny</span>');
   if (l.interesting) tags.push('<span class="tag interesting">⭐ Intressant</span>');
@@ -310,6 +336,32 @@ function listingCard(l) {
     <span>kr</span>
     <button class="btn btn-ghost" data-act="save-resale" style="font-size:11px;padding:2px 5px">Spara</button>
   </div>`;
+  const businessHTML = `<details class="business-box">
+    <summary>Ekonomi & lager ${l.status && l.status !== 'new' ? `· ${esc(statusLabel(l.status))}` : ''}</summary>
+    <div class="business-grid">
+      <label>Inköpspris<input class="biz-purchase" type="number" min="0" value="${esc(l.purchase_price ?? l.price ?? '')}"></label>
+      <label>Förväntad försäljning<input class="biz-expected" type="number" min="0" value="${esc(l.expected_resale_price ?? '')}" placeholder="t.ex. 1800"></label>
+      <label>Transport/frakt<input class="biz-transport" type="number" min="0" value="${esc(l.transport_cost ?? 0)}"></label>
+      <label>Reparation<input class="biz-repair" type="number" min="0" value="${esc(l.repair_cost ?? 0)}"></label>
+      <label>Försäljningsavgift<input class="biz-fee" type="number" min="0" value="${esc(l.selling_fee ?? 0)}"></label>
+      <label>Övrigt<input class="biz-other" type="number" min="0" value="${esc(l.other_cost ?? 0)}"></label>
+      <label>Arbetskostnad<input class="biz-labor" type="number" min="0" value="${esc(l.labor_cost ?? 0)}"></label>
+      <label>Status<select class="biz-status">
+        ${statusOptions(l.status || 'new')}
+      </select></label>
+      <label>Kategori<input class="biz-category" type="text" value="${esc(l.category || '')}" placeholder="t.ex. Garmin"></label>
+      <label>Faktisk frakt<input class="biz-actual-transport" type="number" min="0" value="${esc(l.actual_transport_cost ?? '')}"></label>
+      <label>Faktisk reparation<input class="biz-actual-repair" type="number" min="0" value="${esc(l.actual_repair_cost ?? '')}"></label>
+      <label>Faktisk avgift<input class="biz-actual-fee" type="number" min="0" value="${esc(l.actual_selling_fee ?? '')}"></label>
+      <label>Övrig faktisk kostnad<input class="biz-actual-other" type="number" min="0" value="${esc(l.actual_other_cost ?? '')}"></label>
+      <label class="business-wide">Faktiskt försäljningspris<input class="biz-actual" type="number" min="0" value="${esc(l.actual_sale_price ?? '')}" placeholder="fylls i efter försäljning"></label>
+      <label class="business-wide">Anteckningar<textarea class="biz-notes" rows="2" placeholder="t.ex. hämtas på fredag">${esc(l.notes || '')}</textarea></label>
+      <label class="business-wide">Försäljningslänk<input class="biz-resale-url" type="url" value="${esc(l.resale_url || '')}" placeholder="https://..."></label>
+    </div>
+    <div class="business-result">${businessSummary(l)}</div>
+    <button class="btn btn-primary" data-act="save-business">Spara kalkyl & status</button>
+    <button class="btn btn-ghost" data-act="add-reminder">+ Påminn mig</button>
+  </details>`;
 
   return `
   <div class="listing-card ${l.seen ? "seen" : ""}" data-id="${esc(l.ad_id)}">
@@ -321,10 +373,12 @@ function listingCard(l) {
       <div class="listing-tags">${tags.join("")}</div>
       ${profitHTML}
       ${resaleInputHTML}
+      ${businessHTML}
       <div class="listing-actions">
         <button class="btn btn-ghost" data-act="${l.seen ? "unseen" : "seen"}">${l.seen ? "Osedd" : "Sedd"}</button>
         <button class="btn btn-ghost" data-act="${l.interesting ? "uninterest" : "interest"}">${l.interesting ? "Ej intressant" : "Intressant"}</button>
         <button class="btn btn-ghost" data-act="${l.following ? "unfollow" : "follow"}"${l.following ? " style=\"color:var(--red);font-weight:800\"" : ""}>${l.following ? "🔔 Bevakar pris" : "🔔 Följ pris"}</button>
+        ${l.following ? `<button class="btn btn-ghost" data-act="alert-settings">⚙ Prisfall</button>` : ''}
         <button class="btn btn-ghost" data-act="copy-msg">📋 Meddelande</button>
         <a class="btn btn-primary" href="${esc(l.url)}" target="_blank" rel="noopener">Öppna ↗</a>
       </div>
@@ -334,6 +388,9 @@ function listingCard(l) {
 
 // Sort dropdown handler
   $("feed-sort")?.addEventListener("change", () => {
+    if (state.currentSearch) openFeed(state.currentSearch.id);
+  });
+  $("feed-profitable")?.addEventListener("change", () => {
     if (state.currentSearch) openFeed(state.currentSearch.id);
   });
 
@@ -353,10 +410,52 @@ function wireFeedActions() {
       // Substitute variables
       msg = msg.replace(/\{title\}/g, listing.title || '');
       msg = msg.replace(/\{price\}/g, listing.price ? formatPrice(listing.price) : '');
+      msg = msg.replace(/\{profit\}/g, listing.expected_profit != null ? formatPrice(listing.expected_profit) : '');
       try {
         await navigator.clipboard.writeText(msg);
         toast('Meddelande kopierat!');
       } catch { toast('Kunde inte kopiera. Prova manuellt.'); }
+      return;
+    }
+
+    // Save the full business calculator and inventory status.
+    if (act === "save-business") {
+      const number = (selector) => {
+        const value = card.querySelector(selector).value;
+        return value === '' ? null : Number(value);
+      };
+      const listing = state.listingData.find(item => item.ad_id === adId) || {};
+      await api("PUT", `/api/searches/${state.currentSearch.id}/listings/${adId}/business`, {
+        purchase_price: number('.biz-purchase'),
+        expected_resale_price: number('.biz-expected'),
+        transport_cost: number('.biz-transport') || 0,
+        repair_cost: number('.biz-repair') || 0,
+        selling_fee: number('.biz-fee') || 0,
+        other_cost: number('.biz-other') || 0,
+        labor_cost: number('.biz-labor') || 0,
+        actual_sale_price: number('.biz-actual'),
+        actual_transport_cost: number('.biz-actual-transport'),
+        actual_repair_cost: number('.biz-actual-repair'),
+        actual_selling_fee: number('.biz-actual-fee'),
+        actual_other_cost: number('.biz-actual-other'),
+        status: card.querySelector('.biz-status').value,
+        category: card.querySelector('.biz-category').value,
+        notes: card.querySelector('.biz-notes').value,
+        resale_url: card.querySelector('.biz-resale-url').value,
+      });
+      toast('Kalkyl och lagerstatus sparade');
+      openFeed(state.currentSearch.id);
+      return;
+    }
+
+    if (act === "add-reminder") {
+      const kind = prompt('Vad ska du påminnas om?', 'Kontakta säljaren');
+      if (!kind) return;
+      const due = prompt('När? Ange datum/tid eller lämna tomt:', '');
+      await api("POST", "/api/reminders", {
+        search_id: state.currentSearch.id, ad_id: adId, kind, due_at: due || null
+      });
+      toast('Påminnelse sparad');
       return;
     }
 
@@ -380,9 +479,26 @@ function wireFeedActions() {
       return;
     }
 
+    if (act === "alert-settings") {
+      const amount = prompt('Minsta prisfall i kronor (standard 500):', String(card.dataset.dropAmount || 500));
+      const pct = prompt('Minsta prisfall i procent (standard 5):', String(card.dataset.dropPct || 5));
+      if (amount === null || pct === null) return;
+      await api("PUT", `/api/searches/${state.currentSearch.id}/listings/${adId}/price-alert`, {
+        enabled: true, send_email: true, min_drop_amount: Number(amount) || 500, min_drop_pct: Number(pct) || 5
+      });
+      toast('Prisfallsgräns sparad');
+      openFeed(state.currentSearch.id);
+      return;
+    }
+
     if (act === "follow" || act === "unfollow") {
       await api("POST", `/api/searches/${state.currentSearch.id}/listings/${adId}/${act}`);
-      toast(act === "follow" ? "Prisbevakning på" : "Prisbevakning av");
+      if (act === "follow") {
+        await api("PUT", `/api/searches/${state.currentSearch.id}/listings/${adId}/price-alert`, {
+          enabled: true, send_email: true, min_drop_amount: 500, min_drop_pct: 5
+        });
+      }
+      toast(act === "follow" ? "Prisbevakning på – larm vid minst 500 kr eller 5 %" : "Prisbevakning av");
       openFeed(state.currentSearch.id);
       return;
     }
@@ -418,22 +534,39 @@ function wireFeedActions() {
 /* ---------------- statistics overview ---------------- */
 
 async function loadOverviewStats() {
-  const data = await api("GET", "/api/statistics");
+  const days = ($("stats-period") && $("stats-period").value) || "30";
+  const data = await api("GET", `/api/statistics?days=${days}`);
   const top = data.top_search;
+  const totals = data.totals || {};
   $("overview-stat-cards").innerHTML = `
-    <div class="stat good"><b>${data.total_this_week || 0}</b><span>annonser denna vecka</span></div>
-    <div class="stat"><b>${top ? esc(top.name) : "–"}</b><span>flest nya denna vecka</span></div>`;
+    <div class="stat good"><b>${formatPrice(totals.actual_profit || 0)}</b><span>faktisk nettovinst</span></div>
+    <div class="stat"><b>${formatPrice(totals.expected_profit || 0)}</b><span>beräknad potential</span></div>
+    <div class="stat"><b>${formatPrice(totals.bound_capital || 0)}</b><span>bundet kapital</span></div>
+    <div class="stat"><b>${totals.sold || 0}</b><span>sålda objekt</span></div>
+    <div class="stat"><b>${totals.price_drops || 0}</b><span>prisfall</span></div>`;
   const rows = data.searches || [];
   $("overview-stat-list").innerHTML = rows.length
     ? `<h2 style="margin:18px 0 10px">Per bevakning</h2>${rows.map((row) => `
       <div class="overview-row">
         <div class="overview-row-main">
           <div class="overview-row-name">${esc(row.name)}</div>
-          <div class="overview-row-meta">${row.total_count || 0} hittade totalt · snitt 30 d: ${row.avg_price_30d != null ? formatPrice(row.avg_price_30d) : "–"}</div>
+          <div class="overview-row-meta">${row.found || 0} hittade · ${row.bought || 0} köpta · ${row.sold || 0} sålda · försäljning ${row.sell_rate || 0}%</div>
         </div>
-        <div class="overview-row-count">${row.this_week || 0} nya</div>
+        <div class="overview-row-count">${formatPrice(row.actual_profit || 0)}</div>
       </div>`).join("")}`
     : '<div class="empty"><h2>Ingen statistik än</h2><p class="muted">Skapa en bevakning och kör en kontroll för att börja samla data.</p></div>';
+  const categories = data.categories || [];
+  $("overview-category-list").innerHTML = categories.length ? `<h2 style="margin:20px 0 10px">Per kategori</h2>${categories.map((row) => `<div class="overview-row"><div class="overview-row-main"><div class="overview-row-name">${esc(row.category)}</div><div class="overview-row-meta">${row.found} fynd · ${row.sold} sålda · potential ${formatPrice(row.expected_profit || 0)}</div></div><div class="overview-row-count">${formatPrice(row.actual_profit || 0)}</div></div>`).join('')}` : '';
+}
+
+async function loadInventory() {
+  const status = ($("inventory-status") && $("inventory-status").value) || '';
+  const data = await api("GET", `/api/inventory${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+  const items = data.items || [];
+  const active = items.filter(item => !['sold','declined','lost'].includes(item.status));
+  const bound = active.reduce((sum, item) => sum + Number(item.purchase_price || item.price || 0), 0);
+  $("inventory-stat-cards").innerHTML = `<div class="stat good"><b>${active.length}</b><span>aktiva objekt</span></div><div class="stat"><b>${formatPrice(bound)}</b><span>bundet kapital</span></div><div class="stat"><b>${items.filter(item => item.status === 'sold').length}</b><span>sålda i urvalet</span></div>`;
+  $("inventory-list").innerHTML = items.length ? items.map((item) => `<div class="overview-row inventory-item"><div class="overview-row-main"><a class="overview-row-name" href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title || '(utan titel)')}</a><div class="overview-row-meta">${esc(statusLabel(item.status))} · ${formatPrice(item.actual_profit ?? item.expected_profit ?? 0)} ${item.actual_profit != null ? 'faktisk vinst' : 'beräknad vinst'}</div></div><div class="overview-row-count">${item.deal_score != null ? `Score ${item.deal_score}` : ''}</div></div>`).join('') : '<div class="empty"><h2>Inget i lager ännu</h2><p class="muted">Öppna en annons i flödet och spara kalkylen för att följa den här.</p></div>';
 }
 
 /* ---------------- logs ---------------- */
@@ -547,20 +680,23 @@ async function openSettings() {
     api("GET", "/api/profile"),
   ]);
   state.settings = settings;
+  state.profile = profile;
   $("set-push").checked = !!settings.push_notify;
   $("profile-email").value = profile.email || "";
   $("profile-phone").value = profile.phone || "";
   if ($("profile-quick-msg")) $("profile-quick-msg").value = profile.quick_message || "";
   $("email-hint").textContent = settings.email_enabled
-    ? "SMTP är konfigurerad. E-post skickas för bevakningar där du aktiverat 'Skicka e-post'."
-    : "SMTP är inte konfigurerad (sätt BLOCKETVAKTEN_SMTP_* på servern).";
+    ? "E-post är konfigurerad. E-post skickas för bevakningar där du aktiverat 'Skicka e-post'."
+    : "E-post är inte konfigurerad (sätt Brevo API-variablerna på servern).";
   show("view-settings");
 }
 
 async function saveSettings() {
   const email = $("profile-email").value.trim();
   const phone = $("profile-phone").value.trim();
-  await api("PUT", "/api/profile", { email, phone });
+  const quick_message = $("profile-quick-msg")?.value || "";
+  const savedProfile = await api("PUT", "/api/profile", { email, phone, quick_message });
+  state.profile = savedProfile;
   const payload = { push_notify: $("set-push").checked };
   state.settings = await api("PUT", "/api/settings", payload);
   toast("Profil och inställningar sparade");
@@ -647,6 +783,10 @@ function init() {
   $("logs-back").addEventListener("click", () => show("view-home"));
   $("stats-btn").addEventListener("click", () => show("view-stats"));
   $("stats-back").addEventListener("click", () => show("view-home"));
+  $("stats-period")?.addEventListener("change", loadOverviewStats);
+  $("inventory-btn").addEventListener("click", () => show("view-inventory"));
+  $("inventory-back").addEventListener("click", () => show("view-home"));
+  $("inventory-status")?.addEventListener("change", loadInventory);
   $("settings-btn").addEventListener("click", () => openSettings());
   $("settings-back").addEventListener("click", () => show("view-home"));
   $("search-form").addEventListener("submit", submitForm);

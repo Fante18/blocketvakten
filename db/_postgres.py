@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS searches (
     last_checked_at TEXT,
     last_error TEXT,
     last_new_count INTEGER NOT NULL DEFAULT 0,
+    min_profit REAL NOT NULL DEFAULT 0,
+    min_margin REAL NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -212,6 +214,13 @@ def init_db() -> None:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
+
+        # Add columns introduced after the initial cloud migration.
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS min_profit REAL NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS min_margin REAL NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS resale_price INTEGER")
+        cur.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS deal_score REAL")
 
         # Ensure a default user (id=0) exists for pre-auth migration installs.
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -484,17 +493,19 @@ def create_search(
     send_email: bool = False,
     send_sms: bool = False,
     check_interval: int = 1800,
+    min_profit: float = 0,
+    min_margin: float = 0,
 ) -> dict:
     now = _now()
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             'INSERT INTO searches (user_id, name, keywords, exclude_words, max_price, '
-            'location, active, send_email, send_sms, check_interval, created_at, updated_at) '
-            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id',
+            'location, active, send_email, send_sms, check_interval, min_profit, min_margin, created_at, updated_at) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id',
             (user_id, name.strip(), _json(keywords), _json(exclude_words or []),
              max_price, (location or '').strip(), active, send_email, send_sms,
-             max(check_interval, 60), now, now),
+             max(check_interval, 60), max(float(min_profit or 0), 0), max(float(min_margin or 0), 0), now, now),
         )
         search_id = cur.fetchone()['id']
     return get_search(search_id)
@@ -536,6 +547,7 @@ def update_search(search_id: int, fields: dict) -> dict | None:
     allowed = {
         "name", "keywords", "exclude_words", "max_price", "location",
         "active", "send_email", "send_sms", "check_interval", "pause_until",
+        "min_profit", "min_margin",
     }
     updates = {}
     for key, value in fields.items():
@@ -556,6 +568,11 @@ def update_search(search_id: int, fields: dict) -> dict | None:
                 updates[key] = max(int(value), 60)
             except (TypeError, ValueError):
                 updates[key] = 1800
+        elif key in {"min_profit", "min_margin"}:
+            try:
+                updates[key] = max(float(value or 0), 0)
+            except (TypeError, ValueError):
+                updates[key] = 0
         elif key == "pause_until":
             updates[key] = value or None
         elif key == "location":
@@ -621,6 +638,18 @@ def insert_listing(search_id: int, listing: dict) -> bool:
         cur.execute("SELECT 1 FROM listings WHERE search_id = %s AND ad_id = %s", (search_id, listing["ad_id"]), )
         row = cur.fetchone()
         if row:
+            cur2 = conn.cursor()
+            cur2.execute(
+                "UPDATE listings SET title = %s, price = %s, location = %s, image_url = %s, "
+                "url = %s, published_at = %s, published_text = %s "
+                "WHERE search_id = %s AND ad_id = %s",
+                (
+                    listing.get("title", ""), listing.get("price"), listing.get("location", ""),
+                    listing.get("image_url", ""), listing.get("url", ""),
+                    listing.get("published_at"), listing.get("published_text", ""),
+                    search_id, listing["ad_id"],
+                ),
+            )
             return False
         cur = conn.cursor()
         cur.execute(""" INSERT INTO listings (search_id, ad_id, title, price, location, image_url, url, published_at, published_text, first_seen_at, seen, interesting) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, FALSE) """, ( search_id, listing["ad_id"], listing.get("title", ""), listing.get("price"), listing.get("location", ""), listing.get("image_url", ""), listing.get("url", ""), listing.get("published_at"), listing.get("published_text", ""), now, ),)
@@ -854,7 +883,11 @@ def mark_notifications_read(user_id: int | None = None) -> None:
     if user_id is not None:
         with connect() as conn:
             cur = conn.cursor()
-            cur.execute("UPDATE notifications SET read = TRUE WHERE read = FALSE ")
+            cur.execute(
+                "UPDATE notifications SET read = TRUE WHERE read = FALSE "
+                "AND search_id IN (SELECT id FROM searches WHERE user_id = %s)",
+                (user_id,),
+            )
     else:
         with connect() as conn:
             cur = conn.cursor()
@@ -898,25 +931,22 @@ def get_profile(user_id: int | None = None) -> dict:
         profile = {}
     if not isinstance(profile, dict):
         profile = {}
-    if uid == 0:
-        return {
-            "email": str(profile.get("email") or config.EMAIL_TO or "").strip(),
-            "phone": str(profile.get("phone") or "").strip(),
-        }
     return {
-        "email": str(profile.get("email") or "").strip(),
+        "email": str(profile.get("email") or (config.EMAIL_TO if uid == 0 else "") or "").strip(),
         "phone": str(profile.get("phone") or "").strip(),
+        "quick_message": str(profile.get("quick_message") or "").strip(),
     }
 
 
 def set_profile(user_id: int, profile: dict) -> dict:
     email = str(profile.get("email") or "").strip()
     phone = str(profile.get("phone") or "").strip()
+    quick_message = str(profile.get("quick_message") or "").strip()
     set_setting(
         _profile_key(user_id),
-        json.dumps({"email": email, "phone": phone}, ensure_ascii=False),
+        json.dumps({"email": email, "phone": phone, "quick_message": quick_message}, ensure_ascii=False),
     )
-    return {"email": email, "phone": phone}
+    return {"email": email, "phone": phone, "quick_message": quick_message}
 
 
 def get_setting(key: str, default: str | None = None) -> str | None:
@@ -977,7 +1007,13 @@ def price_history(search_id: int, ad_id: str, limit: int = 90) -> list[dict]:
     """Price snapshots for a single listing, newest first."""
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT price, recorded_at FROM price_history ")
+        cur.execute(
+            "SELECT price, recorded_at FROM price_history "
+            "WHERE search_id = %s AND ad_id = %s "
+            "ORDER BY recorded_at DESC LIMIT %s",
+            (search_id, ad_id, limit),
+        )
+        rows = cur.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -985,7 +1021,12 @@ def search_price_history(search_id: int, limit: int = 200) -> list[dict]:
     """All price snapshots for a search, newest first (for charts)."""
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT ad_id, price, recorded_at FROM price_history ")
+        cur.execute(
+            "SELECT ad_id, price, recorded_at FROM price_history "
+            "WHERE search_id = %s ORDER BY recorded_at DESC LIMIT %s",
+            (search_id, limit),
+        )
+        rows = cur.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -996,18 +1037,23 @@ def search_price_history(search_id: int, limit: int = 200) -> list[dict]:
 def follow_listing(search_id: int, ad_id: str) -> bool:
     """Start following a listing for price-drop alerts. Returns True if newly followed."""
     now = _now()
-    current_price = None
     existing = get_listing(search_id, ad_id)
-    if existing:
-        current_price = existing.get("price")
+    current_price = existing.get("price") if existing else None
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s", (search_id, ad_id), )
-        row = cur.fetchone()
-        if row:
+        cur.execute(
+            "SELECT 1 FROM listing_follows WHERE search_id = %s AND ad_id = %s",
+            (search_id, ad_id),
+        )
+        if cur.fetchone():
             return False
-        cur = conn.cursor()
-        cur.execute("INSERT INTO listing_follows ")
+        cur2 = conn.cursor()
+        cur2.execute(
+            "INSERT INTO listing_follows "
+            "(search_id, ad_id, followed_at, last_price, last_alerted_price) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (search_id, ad_id, now, current_price, current_price),
+        )
     return True
 
 
@@ -1080,12 +1126,19 @@ def _update_follow_price(
     search_id: int, ad_id: str, price: int, alerted_price: int | None = None
 ) -> None:
     with connect() as conn:
+        cur = conn.cursor()
         if alerted_price is not None:
-            cur = conn.cursor()
-            cur.execute("UPDATE listing_follows SET last_price = %s, last_alerted_price = %s ")
+            cur.execute(
+                "UPDATE listing_follows SET last_price = %s, last_alerted_price = %s "
+                "WHERE search_id = %s AND ad_id = %s",
+                (price, alerted_price, search_id, ad_id),
+            )
         else:
-            cur = conn.cursor()
-            cur.execute("UPDATE listing_follows SET last_price = %s ")
+            cur.execute(
+                "UPDATE listing_follows SET last_price = %s "
+                "WHERE search_id = %s AND ad_id = %s",
+                (price, search_id, ad_id),
+            )
 
 
 # --------------------------------------------------------------------------
@@ -1093,15 +1146,22 @@ def _update_follow_price(
 # --------------------------------------------------------------------------
 
 def record_disappeared(search_id: int, listing: dict) -> None:
-    """Record a listing that has disappeared from active search results.
-
-    The listing's last known price is saved as a market-value estimate.
-    Called when a previously-seen listing is missing from a fresh search.
-    """
+    """Record a listing that has disappeared from active search results."""
     now = _now()
     with connect() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO disappeared_listings ")
+        cur.execute(
+            "INSERT INTO disappeared_listings "
+            "(search_id, ad_id, title, last_price, last_seen_at, disappeared_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (search_id, ad_id) DO UPDATE SET "
+            "title = EXCLUDED.title, last_price = EXCLUDED.last_price, "
+            "last_seen_at = EXCLUDED.last_seen_at, disappeared_at = EXCLUDED.disappeared_at",
+            (
+                search_id, listing["ad_id"], listing.get("title", ""),
+                listing.get("price"), listing.get("first_seen_at") or now, now,
+            ),
+        )
 
 
 def get_market_values(search_id: int, days: int = 90) -> dict:
@@ -1114,7 +1174,12 @@ def get_market_values(search_id: int, days: int = 90) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     with connect() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT last_price FROM disappeared_listings ")
+        cur.execute(
+            "SELECT last_price FROM disappeared_listings "
+            "WHERE search_id = %s AND disappeared_at >= %s AND last_price IS NOT NULL",
+            (search_id, cutoff.isoformat()),
+        )
+        rows = cur.fetchall()
     prices = [r["last_price"] for r in rows if r["last_price"] is not None]
     if not prices:
         return {

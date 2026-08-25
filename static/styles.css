@@ -304,6 +304,15 @@ h2 { font-size: 16px; margin: 0; }
 }
 .profit-positive { color: var(--green); font-weight: 700; }
 .profit-negative { color: var(--red); font-weight: 700; }
+.business-box { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 7px; }
+.business-box summary { cursor: pointer; color: var(--red); font-size: 12.5px; font-weight: 800; }
+.business-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.business-grid label { display: flex; flex-direction: column; gap: 4px; color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.business-grid input, .business-grid select { width: 100%; padding: 7px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; background: #fff; color: var(--ink); }
+.business-wide { grid-column: 1 / -1; }
+.business-result { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 9px; font-size: 12px; }
+.business-result span { padding: 5px 7px; background: #f7f8fa; border-radius: 6px; }
+.business-box > .btn { padding: 7px 10px; font-size: 12px; }
 
 /* sort dropdown in feed */
 .sort-select {
@@ -416,6 +425,7 @@ h2 { font-size: 16px; margin: 0; }
   cursor: pointer;
 }
 .switch input { width: 20px; height: 20px; accent-color: var(--red); }
+.compact-switch { font-size: 12px; color: var(--ink-soft); }
 
 /* ---------- drawer / notifications ---------- */
 .scrim {

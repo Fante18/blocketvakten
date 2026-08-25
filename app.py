@@ -23,6 +23,7 @@ from urllib.parse import urlparse, parse_qs
 import config
 import db
 import monitor
+import business
 
 CHECK_LOCK = threading.Lock()
 
@@ -111,7 +112,7 @@ def search_to_public(search: dict) -> dict:
     return search
 
 
-def listing_to_public_full(listing: dict, search_id: int) -> dict:
+def listing_to_public_full(listing: dict, search_id: int, user_id: int | None = None) -> dict:
     """Enrich a listing dict with good_price, deal_score, avg, follow status, profit."""
     stats = db.listing_statistics(search_id)
     avg = stats["avg"]
@@ -123,8 +124,17 @@ def listing_to_public_full(listing: dict, search_id: int) -> dict:
         deal_score = round(((avg - price) / avg) * 100, 1) if price <= avg else round(((avg - price) / avg) * 100, 1)
     listing["good_price"] = good
     listing["deal_score"] = deal_score
+    try:
+        listing.update(business.enrich_listing(search_id, listing))
+    except Exception as exc:
+        print(f"[business] Kunde inte berika annons: {exc}")
     listing["avg_price_30d"] = avg
     listing["following"] = db.is_following(search_id, listing["ad_id"])
+    if user_id is not None:
+        try:
+            listing["price_alert"] = business.get_price_drop_settings(user_id, search_id, listing["ad_id"])
+        except Exception:
+            listing["price_alert"] = None
     resale = listing.get("resale_price")
     if price and resale:
         listing["profit"] = resale - price
@@ -285,10 +295,17 @@ def route(handler, method: str, path: str) -> None:
             }, 400)
         # Update the user's password.
         with db.connect() as conn:
-            conn.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (db._hash_password(password), user_id),
-            )
+            if getattr(db, "_USE_POSTGRES", False):
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE id = %s",
+                    (db._hash_password(password), user_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    (db._hash_password(password), user_id),
+                )
         return json_response(handler, {"ok": True})
 
     # ── everything below requires auth ──
@@ -319,6 +336,8 @@ def route(handler, method: str, path: str) -> None:
             send_email=bool(body.get("send_email", False)),
             send_sms=bool(body.get("send_sms", False)),
             check_interval=parse_int(body.get("check_interval"), 1800),
+            min_profit=float(body.get("min_profit") or 0),
+            min_margin=float(body.get("min_margin") or 0),
         )
         return json_response(handler, search_to_public(search), 201)
 
@@ -357,11 +376,15 @@ def route(handler, method: str, path: str) -> None:
                 fields["check_interval"] = parse_int(body["check_interval"], 1800)
             if "pause_until" in body:
                 fields["pause_until"] = body["pause_until"]
+            if "min_profit" in body:
+                fields["min_profit"] = body["min_profit"]
+            if "min_margin" in body:
+                fields["min_margin"] = body["min_margin"]
             updated = db.update_search(search_id, fields)
             return json_response(handler, search_to_public(updated))
 
     # Listings for a search.
-    if method == "GET" and len(parts) >= 4 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings":
+    if method == "GET" and len(parts) == 4 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings":
         search_id = parse_int(parts[2])
         search = db.get_search_for_user(search_id, user_id) if search_id is not None else None
         if not search:
@@ -379,19 +402,28 @@ def route(handler, method: str, path: str) -> None:
                     "most_expensive" if sort == "most_expensive" else "newest"
                 ),
             )
+        enriched_listings = [listing_to_public_full(l, search_id, user_id) for l in listings]
+        min_profit = float(search.get("min_profit") or 0)
+        min_margin = float(search.get("min_margin") or 0)
+        if handler.query.get("profitable", ["0"])[0] == "1":
+            enriched_listings = [
+                item for item in enriched_listings
+                if (item.get("expected_profit") is not None and item.get("expected_profit") >= min_profit
+                    and (item.get("expected_margin_pct") is None or item.get("expected_margin_pct") >= min_margin))
+            ]
+        if sort == "best_deal":
+            enriched_listings.sort(key=lambda item: (-(item.get("deal_score") or 0), -(item.get("expected_profit") or 0)))
         return json_response(
             handler,
             {
                 "search": search_to_public(search),
                 "avg_price_30d": stats["avg"],
                 "statistics": stats,
-                "listings": [
-                    listing_to_public_full(l, search_id) for l in listings
-                ],
+                "listings": enriched_listings,
             },
         )
 
-    if method == "POST" and len(parts) >= 5 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings":
+    if method == "POST" and len(parts) == 5 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings":
         search_id = parse_int(parts[2])
         ad_id = parts[4]
         if not db.get_search_for_user(search_id, user_id):
@@ -402,7 +434,7 @@ def route(handler, method: str, path: str) -> None:
         )
         if not listing:
             return json_response(handler, {"error": "Hittades inte."}, 404)
-        return json_response(handler, listing_to_public_full(listing, search_id))
+        return json_response(handler, listing_to_public_full(listing, search_id, user_id))
 
     if method == "POST" and len(parts) >= 4 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "seen":
         search_id = parse_int(parts[2])
@@ -435,7 +467,8 @@ def route(handler, method: str, path: str) -> None:
         return json_response(handler, {"results": results})
 
     if method == "GET" and path == "/api/statistics":
-        overview = db.overview_statistics(user_id=user_id)
+        days = parse_int(handler.query.get("days", ["30"])[0], 30)
+        overview = business.overview_statistics(user_id=user_id, days=max(1, min(days, 365)))
         return json_response(handler, overview)
 
     if method == "GET" and len(parts) == 4 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "statistics":
@@ -463,10 +496,12 @@ def route(handler, method: str, path: str) -> None:
 
     if method in ("GET", "PUT") and path == "/api/settings":
         if method == "GET":
-            value = db.get_setting("notifications", "{}")
+            value = db.get_setting(f"notifications:{user_id}", None)
+            if value is None:
+                value = db.get_setting("notifications", "{}")
             try:
-                settings = json.loads(value)
-            except ValueError:
+                settings = json.loads(value or "{}")
+            except (TypeError, ValueError):
                 settings = {}
             settings.setdefault("push_notify", True)
             settings["email_enabled"] = config.EMAIL_ENABLED
@@ -478,14 +513,14 @@ def route(handler, method: str, path: str) -> None:
             return json_response(handler, settings)
         body = read_json_body(handler)
         current = {}
-        raw = db.get_setting("notifications", "{}")
+        raw = db.get_setting(f"notifications:{user_id}", "{}")
         try:
-            current = json.loads(raw)
-        except ValueError:
+            current = json.loads(raw or "{}")
+        except (TypeError, ValueError):
             current = {}
         if "push_notify" in body:
             current["push_notify"] = bool(body["push_notify"])
-        db.set_setting("notifications", json.dumps(current))
+        db.set_setting(f"notifications:{user_id}", json.dumps(current))
         current["email_enabled"] = config.EMAIL_ENABLED
         current["sms_enabled"] = config.SMS_ENABLED
         profile = db.get_profile(user_id=user_id)
@@ -543,7 +578,71 @@ def route(handler, method: str, path: str) -> None:
         listing["resale_price"] = resale_price
         if listing.get("price") and resale_price:
             listing["profit"] = resale_price - listing["price"]
-        return json_response(handler, listing_to_public_full(listing, search_id))
+        return json_response(handler, listing_to_public_full(listing, search_id, user_id))
+
+    # Resale business data for a listing.
+    if method == "GET" and len(parts) >= 6 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings" and parts[5] == "business":
+        search_id = parse_int(parts[2])
+        ad_id = parts[4]
+        if search_id is None or not db.get_search_for_user(search_id, user_id):
+            return json_response(handler, {"error": "Hittades inte."}, 404)
+        listing = db.get_listing(search_id, ad_id)
+        if not listing:
+            return json_response(handler, {"error": "Annonsen hittades inte."}, 404)
+        return json_response(handler, business.enrich_listing(search_id, listing))
+
+    if method == "PUT" and len(parts) >= 6 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings" and parts[5] == "business":
+        search_id = parse_int(parts[2])
+        ad_id = parts[4]
+        if search_id is None or not db.get_search_for_user(search_id, user_id):
+            return json_response(handler, {"error": "Hittades inte."}, 404)
+        body = read_json_body(handler)
+        saved = business.save_finance(search_id, ad_id, user_id, body)
+        listing = db.get_listing(search_id, ad_id) or {"search_id": search_id, "ad_id": ad_id}
+        return json_response(handler, business.enrich_listing(search_id, listing))
+
+    if method == "POST" and len(parts) >= 6 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings" and parts[5] == "status":
+        search_id = parse_int(parts[2])
+        ad_id = parts[4]
+        if search_id is None or not db.get_search_for_user(search_id, user_id):
+            return json_response(handler, {"error": "Hittades inte."}, 404)
+        body = read_json_body(handler)
+        status = str(body.get("status") or "new")
+        allowed_statuses = {"new", "contacted", "bought", "under_repair", "ready", "published", "sold", "declined", "lost"}
+        if status not in allowed_statuses:
+            return json_response(handler, {"error": "Ogiltig lagerstatus."}, 400)
+        saved = business.set_status(search_id, ad_id, user_id, status)
+        listing = db.get_listing(search_id, ad_id) or {"search_id": search_id, "ad_id": ad_id}
+        return json_response(handler, business.enrich_listing(search_id, listing))
+
+    if method == "GET" and path == "/api/inventory":
+        status = handler.query.get("status", [None])[0]
+        return json_response(handler, {"items": business.list_inventory(user_id, status=status)})
+
+    if method == "GET" and path == "/api/reminders":
+        return json_response(handler, {"reminders": business.list_reminders(user_id)})
+
+    if method == "POST" and path == "/api/reminders":
+        body = read_json_body(handler)
+        search_id = parse_int(body.get("search_id"))
+        ad_id = str(body.get("ad_id") or "")
+        if search_id is None or not ad_id or not db.get_search_for_user(search_id, user_id):
+            return json_response(handler, {"error": "Annonsen hittades inte."}, 404)
+        return json_response(handler, business.save_reminder(user_id, search_id, ad_id, body), 201)
+
+    if method == "POST" and len(parts) == 3 and parts[0] == "api" and parts[1] == "reminders":
+        reminder_id = parse_int(parts[2])
+        body = read_json_body(handler)
+        return json_response(handler, {"ok": business.set_reminder_done(user_id, reminder_id, bool(body.get("done")))})
+
+    if method in ("GET", "PUT") and len(parts) >= 6 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "listings" and parts[5] == "price-alert":
+        search_id = parse_int(parts[2])
+        ad_id = parts[4]
+        if search_id is None or not db.get_search_for_user(search_id, user_id):
+            return json_response(handler, {"error": "Hittades inte."}, 404)
+        if method == "GET":
+            return json_response(handler, business.get_price_drop_settings(user_id, search_id, ad_id))
+        return json_response(handler, business.configure_price_drop(user_id, search_id, ad_id, read_json_body(handler)))
 
     # Market-value estimates from disappeared listings.
     if method == "GET" and len(parts) == 5 and parts[0] == "api" and parts[1] == "searches" and parts[3] == "market-values":
@@ -634,6 +733,7 @@ def serve() -> None:
     print(f"[startup] DATABASE_URL={'satt' if config.DATABASE_URL else 'ej satt'}")
     try:
         db.init_db()
+        business.init_db()
         print("[startup] Databas OK")
     except Exception as exc:
         print(f"[startup] Databas-FEL: {exc}")
@@ -659,6 +759,7 @@ def serve() -> None:
 
 def run_check_once() -> None:
     db.init_db()
+    business.init_db()
     print("Kör kontroll av alla bevakningar...")
     results = monitor.run_all_checks()
     for result in results:
@@ -681,6 +782,7 @@ def main() -> None:
         run_check_once()
     elif args.init:
         db.init_db()
+        business.init_db()
         print(f"Databas skapad: {config.DB_PATH}")
     else:
         serve()

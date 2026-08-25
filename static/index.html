@@ -63,6 +63,8 @@
         <span class="muted">·</span>
         <button class="link-btn" id="stats-btn">Statistik</button>
         <span class="muted">·</span>
+        <button class="link-btn" id="inventory-btn">Lager</button>
+        <span class="muted">·</span>
         <button class="link-btn" id="settings-btn">Profil & inställningar</button>
       </div>
     </section>
@@ -108,6 +110,16 @@
           <span>Skicka SMS för nya träffar</span>
         </label>
         <small class="muted">E-post/SMS skickas bara om du har angett adress/nummer i profilen och servern är konfigurerad.</small>
+        <div class="form-row">
+          <label>
+            <span>Minsta nettovinst <em class="muted">(kr, valfritt)</em></span>
+            <input type="number" id="f-min-profit" min="0" placeholder="t.ex. 300" />
+          </label>
+          <label>
+            <span>Minsta marginal <em class="muted">(%, valfritt)</em></span>
+            <input type="number" id="f-min-margin" min="0" max="100" placeholder="t.ex. 20" />
+          </label>
+        </div>
         <label>
           <span>Kontrollfrekvens</span>
           <select id="f-interval">
@@ -138,6 +150,10 @@
             <option value="most_expensive">Dyrast först</option>
             <option value="best_deal">Bästa fynd först (Deal Score)</option>
           </select>
+        </label>
+        <label class="switch compact-switch" style="margin-top:8px">
+          <input type="checkbox" id="feed-profitable" />
+          <span>Visa bara över min vinstgräns</span>
         </label>
       </div>
       <div class="stat-grid" id="feed-stats"></div>        <div class="feed-actions">
@@ -195,11 +211,42 @@
     <section id="view-stats" hidden>
       <button class="back-btn" id="stats-back">← Tillbaka</button>
       <div class="feed-head">
-        <h1>Statistik</h1>
-        <p class="muted">Upptäckter och prisinsikt för alla dina bevakningar.</p>
+        <h1>Resultat & lönsamhet</h1>
+        <p class="muted">Se vilka bevakningar och kategorier som faktiskt ger bäst affärer.</p>
+        <label class="sort-select" style="margin-top: 0.5rem"><span>Period:</span>
+          <select id="stats-period">
+            <option value="7">Senaste 7 dagarna</option>
+            <option value="30" selected>Senaste 30 dagarna</option>
+            <option value="90">Senaste 90 dagarna</option>
+          </select>
+        </label>
       </div>
       <div class="stat-grid" id="overview-stat-cards"></div>
       <div id="overview-stat-list"></div>
+      <div id="overview-category-list"></div>
+    </section>
+
+    <!-- Inventory / resale pipeline -->
+    <section id="view-inventory" hidden>
+      <button class="back-btn" id="inventory-back">← Tillbaka</button>
+      <div class="feed-head">
+        <h1>Lager & affärer</h1>
+        <p class="muted">Följ varje objekt från fynd till faktisk försäljning.</p>
+        <label class="sort-select" style="margin-top: 0.5rem"><span>Status:</span>
+          <select id="inventory-status">
+            <option value="">Alla aktiva</option>
+            <option value="new">Nytt fynd</option>
+            <option value="contacted">Kontaktad</option>
+            <option value="bought">Köpt</option>
+            <option value="under_repair">Under renovering</option>
+            <option value="ready">Klar att sälja</option>
+            <option value="published">Publicerad</option>
+            <option value="sold">Såld</option>
+          </select>
+        </label>
+      </div>
+      <div class="stat-grid" id="inventory-stat-cards"></div>
+      <div id="inventory-list"></div>
     </section>
 
     <!-- Logs -->

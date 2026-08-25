@@ -10,6 +10,7 @@ import blocket
 import config
 import db
 import notifier
+import business
 
 
 def _is_paused(search: dict, now: datetime | None = None) -> bool:
@@ -125,9 +126,24 @@ def check_search(search: dict) -> dict:
     # Check price drops on followed listings.
     drop_alerts = db.check_follow_price_drops(search_id)
     for alert in drop_alerts:
+        # New configurable alerts own the notification; the legacy detector
+        # only covers follows created before the configurable system existed.
+        if business.has_price_drop_setting(search_id, alert.get("ad_id", "")):
+            continue
         notifier.send_price_drop_notification(
             search.get("name", ""), alert, user_id=search.get("user_id") or 0
         )
+
+    # New configurable price-drop alerts. Events are deduplicated in the DB.
+    try:
+        business_alerts = business.check_price_drops(search_id, search.get("user_id") or 0)
+        for alert in business_alerts:
+            if alert.get("send_email", True):
+                notifier.send_price_drop_notification(
+                    search.get("name", ""), alert, user_id=search.get("user_id") or 0
+                )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"prisfall: {exc}")
 
     # Detect disappeared listings for market-value estimation.
     live_ids = set(merged.keys())
